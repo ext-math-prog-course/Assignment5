@@ -5,8 +5,8 @@ function ensure_correct(z, M, N, q, l, u, w; tol=1e-4)
     I₊ = r .> tol
     I₀ = isapprox.(r, 0; atol=tol)
     
-    @test all(isapprox.(z[I₊] - u[I₊], 0; atol=tol))
-    @test all(isapprox.(z[I₋] - l[I₋], 0; atol=tol))
+    @test all(isapprox.(z[I₊] - l[I₊], 0; atol=tol))
+    @test all(isapprox.(z[I₋] - u[I₋], 0; atol=tol))
     @test all(l.-tol .≤ z .≤ u.+tol)
 end
 
