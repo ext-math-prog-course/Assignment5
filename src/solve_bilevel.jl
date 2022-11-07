@@ -27,7 +27,36 @@ for k = 1,2,...
     else, pick some x* != [wₖ; zₖ] and set xₖ₊₁ = x* and repeat
 end
 """
-function solve_bilevel(Q, q, A, l1, u1, M, N, o, l2, u2, x_init)
-    return x_init # FIX ME
+function solve_bilevel(Q, q, A, l1, u1, M, N, o, l2, u2, x_init; max_iters=50)
+    x = x_init
+    zdim, wdim = size(N)
+
+    for iter = 1:max_iters
+        w = x[1:wdim]
+        z = solve_lmcp(M, N, o, l2, u2, w)
+        local_sols = find_local_solution_set(M, N, o, l2, u2, w, z)
+        all_same = true
+        for poly in local_sols
+            l = [l1; poly.l]
+            u = [u1; poly.u]
+            A2 = poly.A
+            AA = [A; A2[:,end-wdim+1:end] A2[:, 1:zdim]]
+            
+            m = OSQP.Model()
+            OSQP.setup!(m; P=sparse(Q), q, A=sparse(AA), l, u, verbose=false, polish=true, eps_abs=1e-8, eps_rel=1e-8)
+
+            res = OSQP.solve!(m)
+            xopt = res.x
+            if !isapprox(xopt, x; atol=1e-5)
+                all_same = false
+                x .= xopt
+                break
+            end
+        end
+        if all_same
+            return x
+        end
+    end
+    error("Can't find solution")
 end
 

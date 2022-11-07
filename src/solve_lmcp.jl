@@ -18,7 +18,10 @@ In particular, take a look at this function in the PATHSolver.jl API:
 https://github.com/chkwon/PATHSolver.jl/blob/2087cc0669fa9e1a6faf994bd6b942fadb324a40/src/C_API.jl#L702
 """
 function solve_lmcp(M, N, q, l, u, w)
-    z = similar(q) # TODO fix me 
+    z0 = zeros(length(q))
+    Msp = SparseMatrixCSC{Float64, Int32}(M)
+    (path_status, z, info) =  PATHSolver.solve_mcp(Msp, N*w+q, l, u, z0, silent=true)
+    return z
 end
 
 
@@ -62,7 +65,53 @@ Set(K) is defined as the polyhedron:
 """
 function find_local_solution_set(M,N,q,l,u,w,z)
     all_local_polys = Vector{Poly}()
-    # TODO Fill these in
+     
+    J = comp_indices(M, N, q, l, u, z, w)
+    J2 = Set(J[2])
+    J4 = Set(J[4])
+     
+    Ks = map(Iterators.product(powerset(J[2]), powerset(J[4]))) do (S2, S4)
+            C2 = setdiff(J2, Set(S2)) |> collect
+            C4 = setdiff(J4, Set(S4)) |> collect
+            K = Dict(1=>Set([J[1];C2]), 2=>Set([J[3];S2;S4]),3=>Set([J[5];C4]),4=>Set(J[6]))
+            #local_piece(avi,n,m,K)
+    end
+    pieces = (local_piece(M, N, q, l, u, K) for K in Ks)
+end
+
+
+function comp_indices(M, N, q, l, u, z, w; tol=1e-4)
+    J = Dict{Int, Vector{Int}}()
+    r = M*z+N*w+q
+    equal_bounds = isapprox.(l, u; atol=tol)
+    riszero = isapprox.(r, 0; atol=tol)
+    J[1] = findall( isapprox.(z, l; atol=tol) .&& r .> tol )
+    J[2] = findall( isapprox.(z, l; atol=tol) .&& riszero .&& .!equal_bounds)
+    J[3] = findall( (l.+tol .< z .< u.-tol) .&& riszero )
+    J[4] = findall( isapprox.(z, u; atol=tol) .&& riszero .&& .!equal_bounds)
+    J[5] = findall( isapprox.(z, u; atol=tol) .&& r .< -tol )
+    J[6] = findall( equal_bounds .&& riszero )
+    return J
+end
+
+function local_piece(M, N, q, l, u, K)
+    n, m = size(N)
+    A = [M N;
+         I(n) spzeros(n,m)]
+    bounds = mapreduce(vcat, 1:n) do i
+        if i ∈ K[1]
+            [-q[i] Inf l[i] l[i]]
+        elseif i ∈ K[2]
+            [-q[i] -q[i] l[i] u[i]] 
+        elseif i ∈ K[3]
+            [-Inf -q[i] u[i] u[i]]
+        else
+            [-Inf Inf l[i] u[i]]
+        end
+    end
+    ll = [bounds[:,1]; bounds[:,3]]
+    uu = [bounds[:,2]; bounds[:,4]]
+    Poly(A, ll, uu)
 end
 
 
